@@ -32,26 +32,26 @@ local function show_help()
     print("")
     print("After each guess you get the following feedback:")
     sep()
-    print("B Bull  -- correct digit at correct position.")
-    print("C Cow   -- correct digit at wrong position.")
-    print("T Tree  -- digit is not in the code, or already used as B or C.")
+    print("🐂 Bull  -- correct digit at correct position.")
+    print("🐄 Cow   -- correct digit at wrong position.")
+    print("🌳 Tree  -- digit is not in the code, or already used as 🐂 or 🐄.")
     print("")
     print("Modes:")
     sep()
-    print("'n' -- Normal: shows only total correct digits, not their positions:\n e.g.  [ 2 3 4 5 ]  B:1  C:2")
-    print("'e' -- Easy: shows icon per position:\n e.g.  [ 2 3 4 5 ]  [BTCC]\n e.g.  [ 2 4 4 5 ]  [BTCC]")
+    print("'n' -- Normal: shows only total correct digits, not their positions:\n e.g.  [ 2 3 4 5 ]  🐂:1  🐄:2")
+    print("'e' -- Easy: shows icon per position:\n e.g.  [ 2 3 4 5 ]  [🐂🌳🐄🐄]\n e.g.  [ 2 4 4 5 ]  [🐂🌳🐄🐄]")
     print("")
     print("Animals:")
     sep()
-    print("r Raccoon -- plays against you — both guessing the same secret code — until the end or until you turn it off. Try to beat it.")
-    print("d Dolphin -- here to help you. Plays one move each time you call it.")
-    print("b Bunny   -- if you give up, call the bunny and it will quickly finish the game for you.")
-    print("f Fox     -- duel mode. You give the fox a secret code, and you have a different secret code. First to guess wins. Fox plays after each of your moves.")
-    print("o Owl     -- it doesn't need to guess, the wise owl already knows the secret code. Each time you type 'o', it reveals info about one random digit: whether it's in the code, and if so, whether it's in the right place.")
+    print("🦝 Raccoon -- plays against you — both guessing the same secret code — until the end or until you turn it off. Try to beat it.")
+    print("🐬 Dolphin -- here to help you. Plays one move each time you call it.")
+    print("🐰 Bunny   -- if you give up, call the bunny and it will quickly finish the game for you.")
+    print("🦊 Fox     -- duel mode. You give the fox a secret code, and you have a different secret code. First to guess wins. Fox plays after each of your moves.")
+    print("🦉 Owl     -- it doesn't need to guess, the wise owl already knows the secret code. Each time you type 'o', it reveals info about one random digit: whether it's in the code, and if so, whether it's in the right place.")
     print("")
     print("ai -- animal intelligence.")
     sep()
-    print("Can be changed mid-game or left at default. Its value is shown in each animal's guess line. e.g. \n1. [ 8 7 2 0 ]  B:0  C:0  d:5\n(in this example the dolphin's intelligence is 5.)")
+    print("Can be changed mid-game or left at default. Its value is shown in each animal's guess line. e.g. \n1. [ 8 7 2 0 ]  🐂:0  🐄:0  🐬:5\n(in this example the dolphin's intelligence is 5.)")
     print("If we want to raise that value to 10, we type 'ai10'. Values from 1-100 can be used. A low value doesn't mean the animal can't solve the code. With higher ai the animals need fewer moves.")
     print("Best tested with the bunny. E.g. Bunny with ai1 can solve a 4-digit code in ~20 moves, with ai5 it solves it in ~6 moves.")
     print("")
@@ -113,7 +113,7 @@ local function check_with_positions(secret, guess)
     
     for i = 1, length do
         if guess[i] == secret[i] then
-            positions[i] = "B"
+            positions[i] = "🐂"
             so[i] = true
             ao[i] = true
         end
@@ -122,22 +122,22 @@ local function check_with_positions(secret, guess)
         if not ao[i] then
             for j = 1, length do
                 if not so[j] and guess[i] == secret[j] then
-                    positions[i] = "C"
+                    positions[i] = "🐄"
                     so[j] = true
                     break
                 end
             end
         end
         if not positions[i] then
-            positions[i] = "T"
+            positions[i] = "🌳"
         end
     end
     
     local bulls = 0
     local cows = 0
     for i = 1, length do
-        if positions[i] == "B" then bulls = bulls + 1
-        elseif positions[i] == "C" then cows = cows + 1
+        if positions[i] == "🐂" then bulls = bulls + 1
+        elseif positions[i] == "🐄" then cows = cows + 1
         end
     end
     
@@ -180,7 +180,7 @@ local function owl_hint(secret_code, move_number)
     local prefix = (move_number < 10 and " " .. move_number or tostring(move_number)) .. ". "
     
     if #positions_in_code == 0 then
-        print(prefix .. mask_str .. "  T:1  o")
+        print(prefix .. mask_str .. "  🌳:1  🦉")
     else
         local is_bull = false
         for _, p in ipairs(positions_in_code) do
@@ -190,9 +190,9 @@ local function owl_hint(secret_code, move_number)
             end
         end
         if is_bull then
-            print(prefix .. mask_str .. "  B:1  o")
+            print(prefix .. mask_str .. "  🐂:1  🦉")
         else
-            print(prefix .. mask_str .. "  C:1  o")
+            print(prefix .. mask_str .. "  🐄:1  🦉")
         end
     end
 end
@@ -431,13 +431,13 @@ end
 
 local function welcome_message()
     print("==============================")
-    print("     BULLS AND COWS")
+    print("  🐂🐂 BULLS AND COWS 🐄🐄")
     print("==============================")
     print("The computer picks a secret code.\nGuess it!")
     print("q = quit  |  h = help")
     print("e = easy  |  n = normal")
-    print("d = dolphin  |  r = raccoon")
-    print("b = bunny  |  o = owl  |  fX = fox ")
+    print("d = 🐬  |  r = 🦝  |  b = 🐰")
+    print("o = 🦉  |  fX = 🦊 ")
     print("aiX = animal intelligence")
     print("re = restart")
     sep()
@@ -533,12 +533,12 @@ local function play(first_game)
         
         if easy_mode then
             bulls, cows, positions = check_with_positions(secret_code, guess)
-            print(format_number(move_number) .. ". " .. short(guess) .. "  [" .. table.concat(positions, " ") .. "]  r:" .. intel_show)
+            print(format_number(move_number) .. ". " .. short(guess) .. "  [" .. table.concat(positions, " ") .. "]  🦝:" .. intel_show)
             animal:add(guess, bulls, cows, positions)
             table.insert(global_history, {guess=guess, bulls=bulls, cows=cows, positions=positions})
         else
             bulls, cows = check(secret_code, guess)
-            print(format_number(move_number) .. ". " .. short(guess) .. "  B:" .. bulls .. "  C:" .. cows .. "  r:" .. intel_show)
+            print(format_number(move_number) .. ". " .. short(guess) .. "  🐂:" .. bulls .. "  🐄:" .. cows .. "  🦝:" .. intel_show)
             animal:add(guess, bulls, cows, nil)
             table.insert(global_history, {guess=guess, bulls=bulls, cows=cows, positions=nil})
         end
@@ -546,7 +546,7 @@ local function play(first_game)
         if bulls == CODE_LEN then
             winner = "RACCOON"
             solved = true
-            print("\n*** Raccoon wins! r ***")
+            print("\n*** Raccoon wins! 🦝 ***")
         end
     end
     
@@ -598,12 +598,12 @@ local function play(first_game)
             
             if easy_mode then
                 d_bulls, d_cows, d_positions = check_with_positions(secret_code, dolphin_guess)
-                print(format_number(move_number) .. ". " .. short(dolphin_guess) .. "  [" .. table.concat(d_positions, "") .. "]  d:" .. intel_show)
+                print(format_number(move_number) .. ". " .. short(dolphin_guess) .. "  [" .. table.concat(d_positions, "") .. "]  🐬:" .. intel_show)
                 animal:add(dolphin_guess, d_bulls, d_cows, d_positions)
                 table.insert(global_history, {guess=dolphin_guess, bulls=d_bulls, cows=d_cows, positions=d_positions})
             else
                 d_bulls, d_cows = check(secret_code, dolphin_guess)
-                print(format_number(move_number) .. ". " .. short(dolphin_guess) .. "  B:" .. d_bulls .. "  C:" .. d_cows .. "  d:" .. intel_show)
+                print(format_number(move_number) .. ". " .. short(dolphin_guess) .. "  🐂:" .. d_bulls .. "  🐄:" .. d_cows .. "  🐬:" .. intel_show)
                 animal:add(dolphin_guess, d_bulls, d_cows, nil)
                 table.insert(global_history, {guess=dolphin_guess, bulls=d_bulls, cows=d_cows, positions=nil})
             end
@@ -611,7 +611,7 @@ local function play(first_game)
             if d_bulls == CODE_LEN then
                 winner = "DOLPHIN"
                 solved = true
-                print("\n*** Dolphin guessed it! d ***")
+                print("\n*** Dolphin guessed it! 🐬 ***")
                 break
             end
             goto end_of_turn
@@ -634,12 +634,12 @@ local function play(first_game)
                 
                 if easy_mode then
                     b_bulls, b_cows, b_positions = check_with_positions(secret_code, bunny_guess)
-                    print(format_number(move_number) .. ". " .. short(bunny_guess) .. "  [" .. table.concat(b_positions, "") .. "]  b:" .. intel_show)
+                    print(format_number(move_number) .. ". " .. short(bunny_guess) .. "  [" .. table.concat(b_positions, "") .. "]  🐰:" .. intel_show)
                     animal:add(bunny_guess, b_bulls, b_cows, b_positions)
                     table.insert(global_history, {guess=bunny_guess, bulls=b_bulls, cows=b_cows, positions=b_positions})
                 else
                     b_bulls, b_cows = check(secret_code, bunny_guess)
-                    print(format_number(move_number) .. ". " .. short(bunny_guess) .. "  B:" .. b_bulls .. "  C:" .. b_cows .. "  b:" .. intel_show)
+                    print(format_number(move_number) .. ". " .. short(bunny_guess) .. "  🐂:" .. b_bulls .. "  🐄:" .. b_cows .. "  🐰:" .. intel_show)
                     animal:add(bunny_guess, b_bulls, b_cows, nil)
                     table.insert(global_history, {guess=bunny_guess, bulls=b_bulls, cows=b_cows, positions=nil})
                 end
@@ -647,7 +647,7 @@ local function play(first_game)
                 if b_bulls == CODE_LEN then
                     winner = "BUNNY"
                     solved = true
-                    print("\n*** Bunny finished the game! b ***")
+                    print("\n*** Bunny finished the game! 🐰 ***")
                     break
                 end
                 move_number = move_number + 1
@@ -693,18 +693,18 @@ local function play(first_game)
             
             if easy_mode then
                 f_bulls, f_cows, f_positions = check_with_positions(fox_code, f_guess)
-                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  f:" .. intel_show)
+                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  🦊:" .. intel_show)
                 fox_animal:add(f_guess, f_bulls, f_cows, f_positions)
             else
                 f_bulls, f_cows = check(fox_code, f_guess)
-                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  f:" .. intel_show)
+                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  🦊:" .. intel_show)
                 fox_animal:add(f_guess, f_bulls, f_cows, nil)
             end
             
             if f_bulls == CODE_LEN then
                 winner = "FOX"
                 solved = true
-                print("\n*** Fox guessed the code you gave it! f You lose!")
+                print("\n*** Fox guessed the code you gave it! 🦊 You lose!")
                 print("Your secret code was: " .. short(secret_code))
                 break
             end
@@ -723,12 +723,12 @@ local function play(first_game)
                 
                 if easy_mode then
                     r_bulls, r_cows, r_positions = check_with_positions(secret_code, r_guess)
-                    print(format_number(move_number) .. ". " .. short(r_guess) .. "  [" .. table.concat(r_positions, "") .. "]  r:" .. intel_show)
+                    print(format_number(move_number) .. ". " .. short(r_guess) .. "  [" .. table.concat(r_positions, "") .. "]  🦝:" .. intel_show)
                     animal:add(r_guess, r_bulls, r_cows, r_positions)
                     table.insert(global_history, {guess=r_guess, bulls=r_bulls, cows=r_cows, positions=r_positions})
                 else
                     r_bulls, r_cows = check(secret_code, r_guess)
-                    print(format_number(move_number) .. ". " .. short(r_guess) .. "  B:" .. r_bulls .. "  C:" .. r_cows .. "  r:" .. intel_show)
+                    print(format_number(move_number) .. ". " .. short(r_guess) .. "  🐂:" .. r_bulls .. "  🐄:" .. r_cows .. "  🦝:" .. intel_show)
                     animal:add(r_guess, r_bulls, r_cows, nil)
                     table.insert(global_history, {guess=r_guess, bulls=r_bulls, cows=r_cows, positions=nil})
                 end
@@ -736,7 +736,7 @@ local function play(first_game)
                 if r_bulls == CODE_LEN then
                     winner = "RACCOON"
                     solved = true
-                    print("\n*** Raccoon wins! r ***")
+                    print("\n*** Raccoon wins! 🦝 ***")
                     break
                 end
             else
@@ -764,7 +764,7 @@ local function play(first_game)
             print(format_number(move_number) .. ". " .. short(guess) .. "  [" .. table.concat(positions, "") .. "]")
         else
             bulls, cows = check(secret_code, guess)
-            print(format_number(move_number) .. ". " .. short(guess) .. "  B:" .. bulls .. "  C:" .. cows)
+            print(format_number(move_number) .. ". " .. short(guess) .. "  🐂:" .. bulls .. "  🐄:" .. cows)
         end
         
         if easy_mode then
@@ -796,18 +796,18 @@ local function play(first_game)
             
             if easy_mode then
                 f_bulls, f_cows, f_positions = check_with_positions(fox_code, f_guess)
-                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  f:" .. intel_show)
+                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  🦊:" .. intel_show)
                 fox_animal:add(f_guess, f_bulls, f_cows, f_positions)
             else
                 f_bulls, f_cows = check(fox_code, f_guess)
-                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  f:" .. intel_show)
+                print(format_number(fox_move_number) .. ". ------------ " .. short(f_guess) .. "  🦊:" .. intel_show)
                 fox_animal:add(f_guess, f_bulls, f_cows, nil)
             end
             
             if f_bulls == CODE_LEN then
                 winner = "FOX"
                 solved = true
-                print("\n*** Fox guessed the code you gave it! f You lose!")
+                print("\n*** Fox guessed the code you gave it! 🦊 You lose!")
                 print("Your secret code was: " .. short(secret_code))
                 break
             end
@@ -822,12 +822,12 @@ local function play(first_game)
             
             if easy_mode then
                 r_bulls, r_cows, r_positions = check_with_positions(secret_code, r_guess)
-                print(format_number(move_number) .. ". " .. short(r_guess) .. "  [" .. table.concat(r_positions, "") .. "]  r:" .. intel_show)
+                print(format_number(move_number) .. ". " .. short(r_guess) .. "  [" .. table.concat(r_positions, "") .. "]  🦝:" .. intel_show)
                 animal:add(r_guess, r_bulls, r_cows, r_positions)
                 table.insert(global_history, {guess=r_guess, bulls=r_bulls, cows=r_cows, positions=r_positions})
             else
                 r_bulls, r_cows = check(secret_code, r_guess)
-                print(format_number(move_number) .. ". " .. short(r_guess) .. "  B:" .. r_bulls .. "  C:" .. r_cows .. "  r:" .. intel_show)
+                print(format_number(move_number) .. ". " .. short(r_guess) .. "  🐂:" .. r_bulls .. "  🐄:" .. r_cows .. "  🦝:" .. intel_show)
                 animal:add(r_guess, r_bulls, r_cows, nil)
                 table.insert(global_history, {guess=r_guess, bulls=r_bulls, cows=r_cows, positions=nil})
             end
@@ -835,7 +835,7 @@ local function play(first_game)
             if r_bulls == CODE_LEN then
                 winner = "RACCOON"
                 solved = true
-                print("\n*** Raccoon wins! r ***")
+                print("\n*** Raccoon wins! 🦝 ***")
                 break
             end
         end
