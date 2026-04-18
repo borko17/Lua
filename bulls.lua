@@ -431,7 +431,7 @@ end
 
 local function welcome_message()
     print("==============================")
-    print("  🐂🐂 BULLS AND COWS 🐄🐄")
+    print("Test 🐂🐂 BULLS AND COWS 🐄🐄")
     print("==============================")
     print("The computer picks a secret code.\nGuess it!")
     print("q = quit  |  h = help")
