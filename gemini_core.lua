@@ -35,13 +35,14 @@ local function build_body()
     end
 
     local contents_json = '"contents":[' .. table.concat(parts, ",") .. ']'
+    local gen_config = '"generationConfig":{"thinkingConfig":{"thinkingBudget":0}}'
 
     if SYSTEM_PROMPT and SYSTEM_PROMPT ~= "" then
         local sys_json = '"system_instruction":{"parts":[{"text":"' .. json_escape(SYSTEM_PROMPT) .. '"}]}'
-        return '{' .. sys_json .. ',' .. contents_json .. '}'
+        return '{' .. sys_json .. ',' .. contents_json .. ',' .. gen_config .. '}'
     end
 
-    return '{' .. contents_json .. '}'
+    return '{' .. contents_json .. ',' .. gen_config .. '}'
 end
 
 -- Lightweight text extractor from the JSON response
@@ -70,7 +71,7 @@ local function gemini_send(user_message)
     conn:setRequestProperty("Content-Type", "application/json")
     conn:setDoOutput(true)
     conn:setConnectTimeout(15000)
-    conn:setReadTimeout(30000)
+    conn:setReadTimeout(60000)
 
     local body = build_body()
 
@@ -115,7 +116,7 @@ end
 
 -- Main chat loop in the Yantra terminal
 local function chat_loop()
-    print("=== Gemini Chat === \n= (" .. MODEL .. ") = \n(type 'exit' to quit)\n")
+    print("=== Gemini Chat (" .. MODEL .. ") === (type 'exit' to quit)\n")
     while true do
         local user_text = input("You: ")
 
