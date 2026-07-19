@@ -115,7 +115,7 @@ end
 
 -- Main chat loop in the Yantra terminal
 local function chat_loop()
-    print("=== Gemini Chat (" .. MODEL .. ") === \n(type 'exit' to quit)\n")
+    print("=== Gemini Chat === \n=== (" .. MODEL .. ") === \n(type 'exit' to quit)\n")
     while true do
         local user_text = input("You: ")
 
