@@ -130,7 +130,7 @@ local function chat_loop()
             print("You: " .. user_text)
             print("...")
             local reply = gemini_send(user_text)
-            print("Gemini: " .. reply .. "\n")
+            print("Gemini: " .. reply)
         end
     end
 end
