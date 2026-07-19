@@ -120,12 +120,13 @@ local function chat_loop()
     while true do
         local user_text = input("You: ")
 
-        if user_text == nil or user_text == "exit" then
+        if user_text == nil or user_text == "" then
             print("Bye!")
             break
         end
 
         if user_text ~= "" then
+            print("-------------------")
             print("You: " .. user_text)
             print("...")
             local reply = gemini_send(user_text)
