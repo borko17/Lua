@@ -1,0 +1,282 @@
+-- gemini_core.lua
+-- Gemini chat logic — loaded remotely by gemini_launcher.lua
+-- Receives API_KEY, MODEL, SYSTEM_PROMPT as arguments (no globals)
+
+local API_KEY, DEFAULT_MODEL, SYSTEM_PROMPT = ...
+
+if not API_KEY or API_KEY == "" then
+    print("Missing API_KEY — check gemini_launcher.lua")
+    return
+end
+
+local MODEL = DEFAULT_MODEL
+
+local function api_url(action)
+    return "https://generativelanguage.googleapis.com/v1beta/models/" .. MODEL .. ":" .. action .. "?key=" .. API_KEY
+end
+
+-- Conversation history (kept in memory while the script runs)
+local history = {}
+
+-- Escapes special characters for a JSON string
+local function json_escape(s)
+    s = s:gsub('\\', '\\\\')
+    s = s:gsub('"', '\\"')
+    s = s:gsub('\n', '\\n')
+    s = s:gsub('\r', '\\r')
+    s = s:gsub('\t', '\\t')
+    return s
+end
+
+-- Builds the JSON request body including full history and system prompt
+local function build_body()
+    local parts = {}
+    for _, msg in ipairs(history) do
+        table.insert(parts, string.format(
+            '{"role":"%s","parts":[{"text":"%s"}]}',
+            msg.role, json_escape(msg.text)
+        ))
+    end
+
+    local contents_json = '"contents":[' .. table.concat(parts, ",") .. ']'
+    local gen_config = '"generationConfig":{"thinkingConfig":{"thinkingBudget":0}}'
+
+    if SYSTEM_PROMPT and SYSTEM_PROMPT ~= "" then
+        local sys_json = '"system_instruction":{"parts":[{"text":"' .. json_escape(SYSTEM_PROMPT) .. '"}]}'
+        return '{' .. sys_json .. ',' .. contents_json .. ',' .. gen_config .. '}'
+    end
+
+    return '{' .. contents_json .. ',' .. gen_config .. '}'
+end
+
+-- Lightweight text extractor from the JSON response
+local function extract_text(json_str)
+    local text = json_str:match('"text"%s*:%s*"(.-)"%s*[,}]')
+    if not text then
+        text = json_str:match('"text"%s*:%s*"(.-)"')
+    end
+    if text then
+        text = text:gsub('\\n', '\n')
+        text = text:gsub('\\"', '"')
+        text = text:gsub('\\\\', '\\')
+    end
+    return text
+end
+
+-- Extracts only the "message" field from a Google API error JSON
+local function extract_error_message(json_str)
+    local msg = json_str:match('"message"%s*:%s*"(.-)"%s*[,}]')
+    if not msg then
+        msg = json_str:match('"message"%s*:%s*"(.-)"')
+    end
+    if msg then
+        msg = msg:gsub('\\n', ' ')
+        msg = msg:gsub('\\"', '"')
+    end
+    return msg or json_str
+end
+
+-- Safely reads all lines from a Java stream. Returns nil if stream is nil or read fails.
+local function read_stream(stream)
+    if not stream then
+        return nil
+    end
+    local ok, out = pcall(function()
+        local isr = luajava.newInstance("java.io.InputStreamReader", stream, "UTF-8")
+        local br = luajava.newInstance("java.io.BufferedReader", isr)
+        local result = {}
+        local line = br:readLine()
+        while line ~= nil do
+            table.insert(result, line)
+            line = br:readLine()
+        end
+        br:close()
+        return table.concat(result, "\n")
+    end)
+    if ok then
+        return out
+    end
+    return nil
+end
+
+-- Does a simple GET request and returns (ok, body_or_err, respCode)
+local function http_get(url)
+    local ok, body, code = pcall(function()
+        local u = luajava.newInstance("java.net.URL", url)
+        local conn = u:openConnection()
+        conn = luajava.cast(conn, "java.net.HttpURLConnection")
+        conn:setRequestMethod("GET")
+        conn:setConnectTimeout(15000)
+        conn:setReadTimeout(15000)
+
+        local respCode = conn:getResponseCode()
+        local stream
+        if respCode < 400 then
+            stream = conn:getInputStream()
+        else
+            stream = conn:getErrorStream()
+        end
+
+        local raw = read_stream(stream)
+        if not raw then
+            error("HTTP " .. respCode .. " (no body)")
+        end
+        if respCode >= 400 then
+            error("HTTP " .. respCode .. ": " .. extract_error_message(raw))
+        end
+        return raw, respCode
+    end)
+    if ok then
+        return true, body, code
+    else
+        return false, body, nil
+    end
+end
+
+-- Fetches the list of models available for this API key and filters
+-- to ones that can actually be used in this chat (support generateContent,
+-- are "gemini" text models, not embedding/tts/vision-only/experimental clutter).
+local function fetch_models()
+    local url = "https://generativelanguage.googleapis.com/v1beta/models?key=" .. API_KEY
+    local ok, body = http_get(url)
+    if not ok then
+        return nil, body
+    end
+
+    local models = {}
+    -- Each model entry looks roughly like:
+    -- {"name":"models/gemini-2.5-flash", ..., "supportedGenerationMethods":["generateContent",...]}
+    -- We scan block by block between "name" occurrences.
+    for block in body:gmatch('"name"%s*:%s*"models/(.-)"%s*,.-supportedGenerationMethods"%s*:%s*%[(.-)%]') do
+        -- gmatch with 2 captures returns them as separate args in the loop below instead
+    end
+
+    for name, methods in body:gmatch('"name"%s*:%s*"models/([%w%.%-]+)".-"supportedGenerationMethods"%s*:%s*%[(.-)%]') do
+        if methods:find('"generateContent"') then
+            local lname = name:lower()
+            local is_relevant = lname:find("gemini")
+                and not lname:find("embedding")
+                and not lname:find("aqa")
+                and not lname:find("tts")
+                and not lname:find("image")
+                and not lname:find("vision")
+            if is_relevant then
+                table.insert(models, name)
+            end
+        end
+    end
+
+    if #models == 0 then
+        return nil, "No usable models found in response."
+    end
+
+    return models
+end
+
+-- Lets the user pick a model from the fetched list, or keep the default.
+local function choose_model()
+    print("Fetching available models...")
+    local models, err = fetch_models()
+
+    if not models then
+        print("Could not fetch model list (" .. tostring(err) .. "). Using default: " .. MODEL)
+        return
+    end
+
+    print("Available models:")
+    for i, name in ipairs(models) do
+        print(i .. ". " .. name)
+    end
+    print("Press Enter to keep default (" .. MODEL .. ").")
+
+    local choice = input("Model number: ")
+    if choice == nil or choice == "" then
+        return
+    end
+
+    local idx = tonumber(choice)
+    if idx and models[idx] then
+        MODEL = models[idx]
+        print("Using model: " .. MODEL)
+    else
+        print("Invalid choice, using default: " .. MODEL)
+    end
+end
+
+-- Sends a message to Gemini and returns the response as a string.
+-- Never throws — always returns a printable string.
+local function gemini_send(user_message)
+    table.insert(history, { role = "user", text = user_message })
+
+    local ok, result = pcall(function()
+        local url = luajava.newInstance("java.net.URL", api_url("generateContent"))
+        local conn = url:openConnection()
+        conn:setRequestMethod("POST")
+        conn:setRequestProperty("Content-Type", "application/json")
+        conn:setDoOutput(true)
+        conn:setConnectTimeout(15000)
+        conn:setReadTimeout(60000)
+
+        local body = build_body()
+
+        local osw = luajava.newInstance("java.io.OutputStreamWriter", conn:getOutputStream(), "UTF-8")
+        osw:write(body)
+        osw:flush()
+        osw:close()
+
+        local respCode = conn:getResponseCode()
+
+        local raw
+        if respCode < 400 then
+            raw = read_stream(conn:getInputStream())
+        else
+            raw = read_stream(conn:getErrorStream())
+        end
+
+        if not raw or raw == "" then
+            return "ERROR (" .. respCode .. "): no response body."
+        end
+
+        if respCode >= 400 then
+            return "ERROR (" .. respCode .. "): " .. extract_error_message(raw)
+        end
+
+        local answer = extract_text(raw)
+        if not answer then
+            return "Failed to parse response:\n" .. raw
+        end
+
+        table.insert(history, { role = "model", text = answer })
+        return answer
+    end)
+
+    if ok then
+        return result
+    else
+        -- Undo the history entry we added for the failed request
+        table.remove(history)
+        return "Connection error: " .. tostring(result)
+    end
+end
+
+-- Main chat loop in the Yantra terminal
+local function chat_loop()
+    print("=== Gemini Chat ===\n(" .. MODEL .. ")\n\nType a prompt or just press Enter to exit.")
+    while true do
+        local user_text = input("You: ")
+
+        if user_text == nil or user_text == "" then
+            print("Bye!")
+            break
+        end
+
+        if user_text ~= "" then
+            print("👤 " .. user_text)
+            local reply = gemini_send(user_text)
+            print("💠 " .. reply)
+        end
+    end
+end
+
+choose_model()
+chat_loop()
