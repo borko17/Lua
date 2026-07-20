@@ -47,8 +47,6 @@ end
 
 -- Lightweight text extractor from the JSON response
 local function extract_text(json_str)
-    -- Stop at the first closing quote followed by ',' or '}'
-    -- (avoids swallowing later fields like "thoughtSignature")
     local text = json_str:match('"text"%s*:%s*"(.-)"%s*[,}]')
     if not text then
         text = json_str:match('"text"%s*:%s*"(.-)"')
@@ -61,57 +59,96 @@ local function extract_text(json_str)
     return text
 end
 
--- Sends a message to Gemini and returns the response as a string
+-- Extracts only the "message" field from a Google API error JSON
+local function extract_error_message(json_str)
+    local msg = json_str:match('"message"%s*:%s*"(.-)"%s*[,}]')
+    if not msg then
+        msg = json_str:match('"message"%s*:%s*"(.-)"')
+    end
+    if msg then
+        msg = msg:gsub('\\n', ' ')
+        msg = msg:gsub('\\"', '"')
+    end
+    return msg or json_str
+end
+
+-- Safely reads all lines from a Java stream. Returns nil if stream is nil or read fails.
+local function read_stream(stream)
+    if not stream then
+        return nil
+    end
+    local ok, out = pcall(function()
+        local isr = luajava.newInstance("java.io.InputStreamReader", stream, "UTF-8")
+        local br = luajava.newInstance("java.io.BufferedReader", isr)
+        local result = {}
+        local line = br:readLine()
+        while line ~= nil do
+            table.insert(result, line)
+            line = br:readLine()
+        end
+        br:close()
+        return table.concat(result, "\n")
+    end)
+    if ok then
+        return out
+    end
+    return nil
+end
+
+-- Sends a message to Gemini and returns the response as a string.
+-- Never throws — always returns a printable string.
 local function gemini_send(user_message)
     table.insert(history, { role = "user", text = user_message })
 
-    local url = luajava.newInstance("java.net.URL", API_URL)
-    local conn = url:openConnection()
-    conn:setRequestMethod("POST")
-    conn:setRequestProperty("Content-Type", "application/json")
-    conn:setDoOutput(true)
-    conn:setConnectTimeout(15000)
-    conn:setReadTimeout(60000)
+    local ok, result = pcall(function()
+        local url = luajava.newInstance("java.net.URL", API_URL)
+        local conn = url:openConnection()
+        conn:setRequestMethod("POST")
+        conn:setRequestProperty("Content-Type", "application/json")
+        conn:setDoOutput(true)
+        conn:setConnectTimeout(15000)
+        conn:setReadTimeout(60000)
 
-    local body = build_body()
+        local body = build_body()
 
-    local osw = luajava.newInstance("java.io.OutputStreamWriter", conn:getOutputStream(), "UTF-8")
-    osw:write(body)
-    osw:flush()
-    osw:close()
+        local osw = luajava.newInstance("java.io.OutputStreamWriter", conn:getOutputStream(), "UTF-8")
+        osw:write(body)
+        osw:flush()
+        osw:close()
 
-    local respCode = conn:getResponseCode()
-    local stream
-    if respCode < 400 then
-        stream = conn:getInputStream()
+        local respCode = conn:getResponseCode()
+
+        local raw
+        if respCode < 400 then
+            raw = read_stream(conn:getInputStream())
+        else
+            raw = read_stream(conn:getErrorStream())
+        end
+
+        if not raw or raw == "" then
+            return "ERROR (" .. respCode .. "): no response body."
+        end
+
+        if respCode >= 400 then
+            return "ERROR (" .. respCode .. "): " .. extract_error_message(raw)
+        end
+
+        local answer = extract_text(raw)
+        if not answer then
+            return "Failed to parse response:\n" .. raw
+        end
+
+        table.insert(history, { role = "model", text = answer })
+        return answer
+    end)
+
+    if ok then
+        return result
     else
-        stream = conn:getErrorStream()
+        -- Undo the history entry we added for the failed request
+        table.remove(history)
+        return "Connection error: " .. tostring(result)
     end
-
-    local isr = luajava.newInstance("java.io.InputStreamReader", stream, "UTF-8")
-    local br = luajava.newInstance("java.io.BufferedReader", isr)
-
-    local result = {}
-    local line = br:readLine()
-    while line ~= nil do
-        table.insert(result, line)
-        line = br:readLine()
-    end
-    br:close()
-
-    local raw = table.concat(result, "\n")
-
-    if respCode >= 400 then
-        return "ERROR (" .. respCode .. "): " .. raw
-    end
-
-    local answer = extract_text(raw)
-    if not answer then
-        return "Failed to parse response:\n" .. raw
-    end
-
-    table.insert(history, { role = "model", text = answer })
-    return answer
 end
 
 -- Main chat loop in the Yantra terminal
@@ -125,12 +162,10 @@ local function chat_loop()
             break
         end
 
-        if user_text ~= "" then
-            print("-------------------------")
-            print("You: " .. user_text)
-            print("💠")
+                if user_text ~= "" then
+            print("👤 " .. user_text)
             local reply = gemini_send(user_text)
-            print("Gemini: " .. reply)
+            print("💠 " .. reply)
         end
     end
 end
