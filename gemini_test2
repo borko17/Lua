@@ -2,21 +2,22 @@
 -- Gemini chat logic — loaded remotely by gemini_launcher.lua
 -- Receives API_KEY, MODEL, SYSTEM_PROMPT as arguments (no globals)
 
-local API_KEY, DEFAULT_MODEL, SYSTEM_PROMPT = ...
+local API_KEY, MODEL, SYSTEM_PROMPT = ...
 
 if not API_KEY or API_KEY == "" then
     print("Missing API_KEY — check gemini_launcher.lua")
     return
 end
 
-local MODEL = DEFAULT_MODEL
-
-local function api_url(action)
-    return "https://generativelanguage.googleapis.com/v1beta/models/" .. MODEL .. ":" .. action .. "?key=" .. API_KEY
-end
+local API_URL = "https://generativelanguage.googleapis.com/v1beta/models/" .. MODEL .. ":generateContent?key=" .. API_KEY
 
 -- Conversation history (kept in memory while the script runs)
 local history = {}
+
+-- Running token totals for this session
+local total_prompt_tokens = 0
+local total_output_tokens = 0
+local total_tokens = 0
 
 -- Escapes special characters for a JSON string
 local function json_escape(s)
@@ -63,6 +64,25 @@ local function extract_text(json_str)
     return text
 end
 
+-- Extracts token counts from the "usageMetadata" block of a Gemini response.
+-- Returns a table {prompt = n, output = n, total = n} or nil if not found.
+local function extract_usage(json_str)
+    local block = json_str:match('"usageMetadata"%s*:%s*{(.-)}')
+    if not block then
+        return nil
+    end
+
+    local prompt = tonumber(block:match('"promptTokenCount"%s*:%s*(%d+)'))
+    local output = tonumber(block:match('"candidatesTokenCount"%s*:%s*(%d+)'))
+    local total = tonumber(block:match('"totalTokenCount"%s*:%s*(%d+)'))
+
+    if not (prompt or output or total) then
+        return nil
+    end
+
+    return { prompt = prompt or 0, output = output or 0, total = total or 0 }
+end
+
 -- Extracts only the "message" field from a Google API error JSON
 local function extract_error_message(json_str)
     local msg = json_str:match('"message"%s*:%s*"(.-)"%s*[,}]')
@@ -99,117 +119,13 @@ local function read_stream(stream)
     return nil
 end
 
--- Does a simple GET request and returns (ok, body_or_err, respCode)
-local function http_get(url)
-    local ok, body, code = pcall(function()
-        local u = luajava.newInstance("java.net.URL", url)
-        local conn = u:openConnection()
-        conn = luajava.cast(conn, "java.net.HttpURLConnection")
-        conn:setRequestMethod("GET")
-        conn:setConnectTimeout(15000)
-        conn:setReadTimeout(15000)
-
-        local respCode = conn:getResponseCode()
-        local stream
-        if respCode < 400 then
-            stream = conn:getInputStream()
-        else
-            stream = conn:getErrorStream()
-        end
-
-        local raw = read_stream(stream)
-        if not raw then
-            error("HTTP " .. respCode .. " (no body)")
-        end
-        if respCode >= 400 then
-            error("HTTP " .. respCode .. ": " .. extract_error_message(raw))
-        end
-        return raw, respCode
-    end)
-    if ok then
-        return true, body, code
-    else
-        return false, body, nil
-    end
-end
-
--- Fetches the list of models available for this API key and filters
--- to ones that can actually be used in this chat (support generateContent,
--- are "gemini" text models, not embedding/tts/vision-only/experimental clutter).
-local function fetch_models()
-    local url = "https://generativelanguage.googleapis.com/v1beta/models?key=" .. API_KEY
-    local ok, body = http_get(url)
-    if not ok then
-        return nil, body
-    end
-
-    local models = {}
-    -- Each model entry looks roughly like:
-    -- {"name":"models/gemini-2.5-flash", ..., "supportedGenerationMethods":["generateContent",...]}
-    -- We scan block by block between "name" occurrences.
-    for block in body:gmatch('"name"%s*:%s*"models/(.-)"%s*,.-supportedGenerationMethods"%s*:%s*%[(.-)%]') do
-        -- gmatch with 2 captures returns them as separate args in the loop below instead
-    end
-
-    for name, methods in body:gmatch('"name"%s*:%s*"models/([%w%.%-]+)".-"supportedGenerationMethods"%s*:%s*%[(.-)%]') do
-        if methods:find('"generateContent"') then
-            local lname = name:lower()
-            local is_relevant = lname:find("gemini")
-                and not lname:find("embedding")
-                and not lname:find("aqa")
-                and not lname:find("tts")
-                and not lname:find("image")
-                and not lname:find("vision")
-            if is_relevant then
-                table.insert(models, name)
-            end
-        end
-    end
-
-    if #models == 0 then
-        return nil, "No usable models found in response."
-    end
-
-    return models
-end
-
--- Lets the user pick a model from the fetched list, or keep the default.
-local function choose_model()
-    print("Fetching available models...")
-    local models, err = fetch_models()
-
-    if not models then
-        print("Could not fetch model list (" .. tostring(err) .. "). Using default: " .. MODEL)
-        return
-    end
-
-    print("Available models:")
-    for i, name in ipairs(models) do
-        print(i .. ". " .. name)
-    end
-    print("Press Enter to keep default (" .. MODEL .. ").")
-
-    local choice = input("Model number: ")
-    if choice == nil or choice == "" then
-        return
-    end
-
-    local idx = tonumber(choice)
-    if idx and models[idx] then
-        MODEL = models[idx]
-        print("Using model: " .. MODEL)
-    else
-        print("Invalid choice, using default: " .. MODEL)
-    end
-end
-
--- Sends a message to Gemini and returns the response as a string.
--- Never throws — always returns a printable string.
+-- Sends a message to Gemini and returns (reply_text, usage_or_nil).
+-- Never throws — reply_text is always a printable string.
 local function gemini_send(user_message)
     table.insert(history, { role = "user", text = user_message })
 
-    local ok, result = pcall(function()
-        local url = luajava.newInstance("java.net.URL", api_url("generateContent"))
+    local ok, reply, usage = pcall(function()
+        local url = luajava.newInstance("java.net.URL", API_URL)
         local conn = url:openConnection()
         conn:setRequestMethod("POST")
         conn:setRequestProperty("Content-Type", "application/json")
@@ -234,34 +150,42 @@ local function gemini_send(user_message)
         end
 
         if not raw or raw == "" then
-            return "ERROR (" .. respCode .. "): no response body."
+            return "ERROR (" .. respCode .. "): no response body.", nil
         end
 
         if respCode >= 400 then
-            return "ERROR (" .. respCode .. "): " .. extract_error_message(raw)
+            return "ERROR (" .. respCode .. "): " .. extract_error_message(raw), nil
         end
 
         local answer = extract_text(raw)
         if not answer then
-            return "Failed to parse response:\n" .. raw
+            return "Failed to parse response:\n" .. raw, nil
         end
 
         table.insert(history, { role = "model", text = answer })
-        return answer
+        return answer, extract_usage(raw)
     end)
 
     if ok then
-        return result
+        return reply, usage
     else
         -- Undo the history entry we added for the failed request
         table.remove(history)
-        return "Connection error: " .. tostring(result)
+        return "Connection error: " .. tostring(reply), nil
     end
+end
+
+-- Prints the running token totals for this session
+local function print_token_summary()
+    print(string.format(
+        "Tokens — prompt: %d, output: %d, total: %d",
+        total_prompt_tokens, total_output_tokens, total_tokens
+    ))
 end
 
 -- Main chat loop in the Yantra terminal
 local function chat_loop()
-    print("=== Gemini Chat ===\n(" .. MODEL .. ")\n\nType a prompt or just press Enter to exit.")
+    print("=== Gemini Chat ===\n(" .. MODEL .. ")\n\nType a prompt, /tokens for usage, or press Enter to exit.")
     while true do
         local user_text = input("You: ")
 
@@ -270,13 +194,24 @@ local function chat_loop()
             break
         end
 
-        if user_text ~= "" then
+        if user_text == "/tokens" then
+            print_token_summary()
+        else
             print("👤 " .. user_text)
-            local reply = gemini_send(user_text)
+            local reply, usage = gemini_send(user_text)
             print("💠 " .. reply)
+
+            if usage then
+                total_prompt_tokens = total_prompt_tokens + usage.prompt
+                total_output_tokens = total_output_tokens + usage.output
+                total_tokens = total_tokens + usage.total
+                print(string.format(
+                    "  (+%d prompt, +%d output — session total: %d)",
+                    usage.prompt, usage.output, total_tokens
+                ))
+            end
         end
     end
 end
 
-choose_model()
 chat_loop()
