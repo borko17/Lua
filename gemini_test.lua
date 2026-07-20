@@ -162,9 +162,10 @@ local function chat_loop()
             break
         end
 
-        if user_text ~= "" then
+                if user_text ~= "" then
             print("-------------------------")
             print("You: " .. user_text)
+            print("💠")
             local reply = gemini_send(user_text)
             print("Gemini: " .. reply)
         end
