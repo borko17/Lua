@@ -28,14 +28,21 @@ end
 local function build_body()
     local parts = {}
     for _, msg in ipairs(history) do
-        table.insert(parts, string.format(
-            '{"role":"%s","parts":[{"text":"%s"}]}',
-            msg.role, json_escape(msg.text)
-        ))
+        if msg.thoughtSignature then
+            table.insert(parts, string.format(
+                '{"role":"%s","parts":[{"text":"%s","thoughtSignature":"%s"}]}',
+                msg.role, json_escape(msg.text), msg.thoughtSignature
+            ))
+        else
+            table.insert(parts, string.format(
+                '{"role":"%s","parts":[{"text":"%s"}]}',
+                msg.role, json_escape(msg.text)
+            ))
+        end
     end
 
     local contents_json = '"contents":[' .. table.concat(parts, ",") .. ']'
-    local gen_config = '"generationConfig":{"thinkingConfig":{"thinkingBudget":0}}'
+    local gen_config = '"generationConfig":{"thinkingConfig":{"thinkingLevel":"low"}}'
 
     if SYSTEM_PROMPT and SYSTEM_PROMPT ~= "" then
         local sys_json = '"system_instruction":{"parts":[{"text":"' .. json_escape(SYSTEM_PROMPT) .. '"}]}'
@@ -45,18 +52,48 @@ local function build_body()
     return '{' .. contents_json .. ',' .. gen_config .. '}'
 end
 
--- Lightweight text extractor from the JSON response
-local function extract_text(json_str)
-    local text = json_str:match('"text"%s*:%s*"(.-)"%s*[,}]')
-    if not text then
-        text = json_str:match('"text"%s*:%s*"(.-)"')
+-- Finds all balanced top-level-and-nested {...} objects in a string.
+-- Needed because a plain regex can't correctly handle nested JSON braces.
+local function find_all_objects(s)
+    local objs = {}
+    local n = #s
+    for i = 1, n do
+        if s:sub(i, i) == '{' then
+            local depth = 0
+            for j = i, n do
+                local c = s:sub(j, j)
+                if c == '{' then
+                    depth = depth + 1
+                elseif c == '}' then
+                    depth = depth - 1
+                    if depth == 0 then
+                        table.insert(objs, s:sub(i, j))
+                        break
+                    end
+                end
+            end
+        end
     end
-    if text then
-        text = text:gsub('\\n', '\n')
-        text = text:gsub('\\"', '"')
-        text = text:gsub('\\\\', '\\')
+    return objs
+end
+
+-- Extracts the final answer text (skipping any "thought":true parts) and,
+-- if present, the accompanying thoughtSignature for that part.
+local function extract_answer(json_str)
+    for _, obj in ipairs(find_all_objects(json_str)) do
+        if obj:find('"text"%s*:%s*"') and not obj:find('"thought"%s*:%s*true') then
+            local text = obj:match('"text"%s*:%s*"(.-)"%s*[,}]')
+                       or obj:match('"text"%s*:%s*"(.-)"')
+            if text then
+                text = text:gsub('\\n', '\n')
+                text = text:gsub('\\"', '"')
+                text = text:gsub('\\\\', '\\')
+                local sig = obj:match('"thoughtSignature"%s*:%s*"(.-)"')
+                return text, sig
+            end
+        end
     end
-    return text
+    return nil, nil
 end
 
 -- Extracts only the "message" field from a Google API error JSON
@@ -133,12 +170,12 @@ local function gemini_send(user_message)
             return "ERROR (" .. respCode .. "): " .. extract_error_message(raw)
         end
 
-        local answer = extract_text(raw)
+        local answer, thought_sig = extract_answer(raw)
         if not answer then
             return "Failed to parse response:\n" .. raw
         end
 
-        table.insert(history, { role = "model", text = answer })
+        table.insert(history, { role = "model", text = answer, thoughtSignature = thought_sig })
         return answer
     end)
 
